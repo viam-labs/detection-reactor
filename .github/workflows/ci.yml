@@ -16,6 +16,11 @@ jobs:
           go-version: '1.25'
           cache: true
 
+      # golangci-lint downloads modules implicitly, and reports a failure to do
+      # so as "no go files to analyze" — which reads like a source problem.
+      - name: Download dependencies
+        run: go mod download
+
       - uses: golangci/golangci-lint-action@v8
         with:
           version: v2.12.2
