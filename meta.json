@@ -1,0 +1,28 @@
+{
+  "$schema": "https://dl.viam.dev/module.schema.json",
+  "module_id": "viam:detection-reactor",
+  "visibility": "public",
+  "url": "https://github.com/viam-labs/detection-reactor",
+  "description": "Runs a DoCommand when a vision service reports a labelled detection.",
+  "models": [
+    {
+      "api": "rdk:service:generic",
+      "model": "viam:detection-reactor:reactor",
+      "short_description": "Polls a vision service and sends a configured DoCommand when a label is detected.",
+      "markdown_link": "docs/viam_detection-reactor_reactor.md"
+    }
+  ],
+  "applications": null,
+  "markdown_link": "README.md",
+  "entrypoint": "bin/detection-reactor",
+  "build": {
+    "build": "make module.tar.gz",
+    "setup": "make setup",
+    "path": "module.tar.gz",
+    "arch": [
+      "linux/amd64",
+      "linux/arm64",
+      "darwin/arm64"
+    ]
+  }
+}
