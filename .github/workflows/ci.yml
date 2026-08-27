@@ -38,8 +38,17 @@ jobs:
           go-version: '1.25'
           cache: true
 
+      # proxy.golang.org intermittently drops connections mid-download on a
+      # dependency tree this size, which reads as a build failure. Retry rather
+      # than re-running the whole workflow by hand.
       - name: Setup
-        run: make setup
+        run: |
+          for attempt in 1 2 3; do
+            make setup && exit 0
+            echo "setup failed (attempt $attempt), retrying"
+            sleep 15
+          done
+          exit 1
 
       - name: Build
         run: make build
