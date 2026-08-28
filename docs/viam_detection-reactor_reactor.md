@@ -14,7 +14,8 @@ A Viam `generic` service that polls a vision service and sends a configured DoCo
   },
   "poll_interval_ms": 500,
   "min_confidence": 0.5,
-  "cooldown_sec": 5
+  "cooldown_sec": 5,
+  "command_timeout_sec": 1200
 }
 ```
 
@@ -29,10 +30,15 @@ A Viam `generic` service that polls a vision service and sends a configured DoCo
 | `poll_interval_ms` | number | Optional | How often to poll the vision service. Default: `500` |
 | `min_confidence` | number | Optional | Detections scoring below this are ignored, `[0, 1]`. Default: `0.5` |
 | `cooldown_sec` | number | Optional | Minimum gap between reactions, measured from the completion of the previous one. Default: `5` |
+| `command_timeout_sec` | number | Optional | How long the target may take to answer a `DoCommand`. Default: `0`, which inherits the RDK's `DefaultMethodTimeout` of 10 minutes |
 
 ## Behavior
 
 Each poll fetches detections, discards those below `min_confidence` or whose label is not in `label_commands`, and takes the highest-confidence survivor. If the cooldown has elapsed, its payload is sent to `target` and the loop blocks until the target returns.
+
+Because the loop blocks, a target whose work runs long needs `command_timeout_sec` raised. Left unset, the RDK stamps its `DefaultMethodTimeout` of 10 minutes on the outbound call; when that fires the call is cancelled, and the cancellation propagates into the target and aborts the work in progress. This bites exactly once the job outgrows ten minutes, so it tends to surface late, as a job that stops partway through for no visible reason.
+
+The attribute only helps the polling path. The `trigger` command runs on its caller's request context, and a context cannot outlive its parent's deadline, so a manual trigger is still bounded by the caller's own timeout no matter what this is set to.
 
 A successful command stamps the cooldown. A failed one does not, and is logged.
 
