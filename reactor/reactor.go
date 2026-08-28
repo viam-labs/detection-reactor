@@ -43,6 +43,12 @@ type Config struct {
 	PollIntervalMs int                               `json:"poll_interval_ms,omitempty"`
 	MinConfidence  float64                           `json:"min_confidence,omitempty"`
 	CooldownSec    float64                           `json:"cooldown_sec,omitempty"`
+	// CommandTimeoutSec bounds how long a target may take to answer a
+	// DoCommand. Leave it at 0 to inherit the RDK's DefaultMethodTimeout,
+	// which is 10 minutes: past that the call is cancelled and the
+	// cancellation propagates into the target, aborting whatever it was
+	// doing. Raise this when the target's work legitimately runs longer.
+	CommandTimeoutSec float64 `json:"command_timeout_sec,omitempty"`
 }
 
 const (
@@ -92,6 +98,10 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	}
 	if cfg.CooldownSec < 0 {
 		return nil, nil, fmt.Errorf("cooldown_sec must be >= 0, got %g", cfg.CooldownSec)
+	}
+	if cfg.CommandTimeoutSec < 0 {
+		return nil, nil, fmt.Errorf(
+			"command_timeout_sec must be >= 0 (0 inherits the RDK default), got %g", cfg.CommandTimeoutSec)
 	}
 	target, err := cfg.TargetName()
 	if err != nil {
@@ -278,9 +288,23 @@ func (r *reactor) cooldownElapsed() bool {
 	return r.lastFiredAt.IsZero() || time.Since(r.lastFiredAt) >= time.Duration(r.cfg.CooldownSec*float64(time.Second))
 }
 
+// commandCtx applies command_timeout_sec to ctx. With the attribute unset the
+// context is returned untouched, which leaves the RDK's own interceptor to
+// stamp DefaultMethodTimeout (10 minutes) on the outbound call. Note that this
+// can only ever shorten an inbound request context: a deadline already carried
+// by ctx wins, because a child context cannot outlive its parent.
+func (r *reactor) commandCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	if r.cfg.CommandTimeoutSec <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, time.Duration(r.cfg.CommandTimeoutSec*float64(time.Second)))
+}
+
 func (r *reactor) fire(ctx context.Context, label string) {
 	cmd := r.cfg.LabelCommands[label]
 	r.logger.Infof("reactor: %q -> sending %v to %q", label, keysOf(cmd), r.cfg.Target)
+	ctx, cancel := r.commandCtx(ctx)
+	defer cancel()
 	if _, err := r.target.DoCommand(ctx, cmd); err != nil {
 		// No cooldown stamp: a rejected command should be retried, not
 		// silently swallowed until the cooldown lapses.
@@ -305,6 +329,11 @@ func (r *reactor) triggerLabel(ctx context.Context, label string) (map[string]in
 	if !ok {
 		return nil, fmt.Errorf("reactor: label %q is not in label_commands", label)
 	}
+	// Bounded by the inbound request's own deadline, so this cannot carry a
+	// trigger past the caller's timeout; the polling path is the one that
+	// benefits from a raised command_timeout_sec.
+	ctx, cancel := r.commandCtx(ctx)
+	defer cancel()
 	resp, err := r.target.DoCommand(ctx, cmd)
 	if err != nil {
 		return nil, fmt.Errorf("reactor: trigger %q -> %q: %w", label, r.cfg.Target, err)
@@ -334,6 +363,9 @@ func (r *reactor) status() map[string]interface{} {
 		"labels":      keysOf(mapToAny(r.cfg.LabelCommands)),
 		"polls":       r.pollCount,
 		"fired_count": r.firedCount,
+	}
+	if r.cfg.CommandTimeoutSec > 0 {
+		out["command_timeout_sec"] = r.cfg.CommandTimeoutSec
 	}
 	if !r.reactingSince.IsZero() && r.cancelFn != nil {
 		out["reacting_since"] = r.reactingSince.UTC().Format(time.RFC3339)

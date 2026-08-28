@@ -5,6 +5,7 @@ import (
 	"errors"
 	"image"
 	"testing"
+	"time"
 
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/testutils/inject"
@@ -181,4 +182,63 @@ func TestStatus_reportsIdleBeforeStart(t *testing.T) {
 	test.That(t, status["reacting"], test.ShouldEqual, false)
 	test.That(t, status["target"], test.ShouldEqual, "drawer")
 	test.That(t, status["fired_count"], test.ShouldEqual, 0)
+}
+
+func TestConfigValidate_commandTimeoutRange(t *testing.T) {
+	cfg := validConfig()
+	cfg.CommandTimeoutSec = -1
+	_, _, err := cfg.Validate("p")
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, err.Error(), test.ShouldContainSubstring, "command_timeout_sec")
+
+	cfg.CommandTimeoutSec = 1200
+	_, _, err = cfg.Validate("p")
+	test.That(t, err, test.ShouldBeNil)
+}
+
+func TestCommandCtx_unsetLeavesTheContextAlone(t *testing.T) {
+	r := newTestReactor(t, validConfig(), nil)
+	ctx, cancel := r.commandCtx(context.Background())
+	defer cancel()
+	_, hasDeadline := ctx.Deadline()
+	test.That(t, hasDeadline, test.ShouldBeFalse)
+}
+
+func TestCommandCtx_appliesTheConfiguredDeadline(t *testing.T) {
+	cfg := validConfig()
+	cfg.CommandTimeoutSec = 1200
+	r := newTestReactor(t, cfg, nil)
+	ctx, cancel := r.commandCtx(context.Background())
+	defer cancel()
+	deadline, hasDeadline := ctx.Deadline()
+	test.That(t, hasDeadline, test.ShouldBeTrue)
+	// Well past the RDK's 10-minute DefaultMethodTimeout, which is the whole
+	// point of the attribute.
+	test.That(t, time.Until(deadline), test.ShouldBeGreaterThan, 15*time.Minute)
+}
+
+func TestCommandCtx_cannotOutliveTheParent(t *testing.T) {
+	cfg := validConfig()
+	cfg.CommandTimeoutSec = 1200
+	r := newTestReactor(t, cfg, nil)
+	parent, cancelParent := context.WithTimeout(context.Background(), time.Minute)
+	defer cancelParent()
+	ctx, cancel := r.commandCtx(parent)
+	defer cancel()
+	deadline, _ := ctx.Deadline()
+	test.That(t, time.Until(deadline), test.ShouldBeLessThanOrEqualTo, time.Minute)
+}
+
+func TestFire_survivesPastTheDefaultMethodTimeout(t *testing.T) {
+	cfg := validConfig()
+	cfg.CommandTimeoutSec = 1200
+	var got time.Duration
+	r := newTestReactor(t, cfg, func(ctx context.Context, _ map[string]interface{}) (map[string]interface{}, error) {
+		deadline, _ := ctx.Deadline()
+		got = time.Until(deadline)
+		return nil, nil
+	})
+	r.fire(context.Background(), "Victory")
+	test.That(t, got, test.ShouldBeGreaterThan, 15*time.Minute)
+	test.That(t, r.firedCount, test.ShouldEqual, 1)
 }

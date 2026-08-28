@@ -39,7 +39,7 @@ See the [reactor documentation](./docs/viam_detection-reactor_reactor.md) for ev
 
 - **It starts idle.** A config change, a module update, or a machine restart never sets a target running on its own — you send `start_reacting` deliberately. For a target that moves hardware, an orchestrator that auto-arms on reconfigure is a hazard, not a convenience.
 
-- **Commands are sent synchronously.** The poll loop waits for the target to finish, so an action taking minutes cannot overlap itself and no detection is acted on while it runs. Cooldown is measured from completion, not from the start. `stop_reacting` cancels the in-flight command along with the loop, so it halts a long action rather than waiting it out.
+- **Commands are sent synchronously.** The poll loop waits for the target to finish, so an action taking minutes cannot overlap itself and no detection is acted on while it runs. Cooldown is measured from completion, not from the start. `stop_reacting` cancels the in-flight command along with the loop, so it halts a long action rather than waiting it out. A target that works for longer than ten minutes needs `command_timeout_sec` raised past the RDK's default, or the call is cancelled underneath it mid-action.
 
 - **A failed command does not stamp the cooldown.** If the target rejects a command — busy, misconfigured, unreachable — the next poll may try again rather than going quiet for a cooldown period. A rejection is not a reaction.
 
