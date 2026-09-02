@@ -101,7 +101,8 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	}
 	if cfg.CommandTimeoutSec < 0 {
 		return nil, nil, fmt.Errorf(
-			"command_timeout_sec must be >= 0 (0 inherits the RDK default), got %g", cfg.CommandTimeoutSec)
+			"command_timeout_sec must be >= 0 (0 inherits the RDK default), got %g", cfg.CommandTimeoutSec,
+		)
 	}
 	target, err := cfg.TargetName()
 	if err != nil {
@@ -194,7 +195,8 @@ func (r *reactor) DoCommand(ctx context.Context, cmd map[string]interface{}) (ma
 		return r.status(), nil
 	default:
 		return nil, fmt.Errorf(
-			"reactor: unknown command %q; expected \"start_reacting\", \"stop_reacting\", \"trigger\", or \"status\"", command)
+			"reactor: unknown command %q; expected \"start_reacting\", \"stop_reacting\", \"trigger\", or \"status\"", command,
+		)
 	}
 }
 
